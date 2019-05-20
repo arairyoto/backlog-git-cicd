@@ -1,0 +1,394 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: CloudFormation CI/CD Pipeline for Serverless Framework
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Backlog Configuration
+      Parameters:
+      - Username
+      - Password
+    - Label:
+        default: CodePipeline Configuration
+      Parameters:
+      - Environment
+      - Email
+      - AppName
+      - TargetBranchName
+      - TemplateFilePath
+      - InputSourceCodeFilePath
+    ParameterLabels:
+      AppName:
+        default: App Name
+      Email:
+        default: Email
+      Environment:
+        default: Environment
+      InputSourceCodeFilePath:
+        default: Input Source Code File Path
+      Password:
+        default: Backlog Password
+      TargetBranchName:
+        default: Target Branch Name
+      TemplateFilePath:
+        default: Template File Path
+      Username:
+        default: Backlog Username
+Parameters:
+  AppName:
+    Type: String
+  Email:
+    Type: String
+  Environment:
+    Type: String
+  InputSourceCodeFilePath:
+    Default: my-source-code-file-name.zip
+    Type: String
+  Password:
+    NoEcho: true
+    Type: String
+  TargetBranchName:
+    Default: develop
+    Type: String
+  TemplateFilePath:
+    Default: packaged.yml
+    Type: String
+  Username:
+    Type: String
+Resources:
+  ArtifactStoreBucket:
+    Properties:
+      VersioningConfiguration:
+        Status: Enabled
+    Type: AWS::S3::Bucket
+  BacklogGitApi:
+    Properties:
+      StageName: api
+    Type: AWS::Serverless::Api
+  BacklogGitFunction:
+    Properties:
+      CodeUri: s3://sar-btc/1fd104467a931595e9eff01fd53d95a4
+      Description: It is a Python3 application uploading S3 source codes in Backlog
+        Git.
+      Environment:
+        Variables:
+          BUCKET_NAME:
+            Ref: InputBucket
+          FILE_PATH:
+            Ref: InputSourceCodeFilePath
+          PASSWORD:
+            Ref: Password
+          SNS_TOPIC:
+            Ref: CodePipelineSNSTopic
+          TARGET_BRANCH:
+            Ref: TargetBranchName
+          USERNAME:
+            Ref: Username
+      Events:
+        Get:
+          Properties:
+            Method: POST
+            Path: /
+            RestApiId:
+              Ref: BacklogGitApi
+          Type: Api
+      Handler: lambda_function.lambda_handler
+      MemorySize: 128
+      Role:
+        Fn::GetAtt:
+        - BacklogGitFunctionRole
+        - Arn
+      Runtime: python3.6
+      Timeout: 30
+    Type: AWS::Serverless::Function
+  BacklogGitFunctionRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action: sts:AssumeRole
+          Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+        Version: 2012-10-17
+      Path: /
+      Policies:
+      - PolicyDocument:
+          Statement:
+          - Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Effect: Allow
+            Resource:
+            - arn:aws:logs:*:*:*
+            Sid: CloudWatchAccess
+          - Action:
+            - s3:PutObject
+            - s3:GetObject
+            - s3:GetObjectVersion
+            Effect: Allow
+            Resource:
+            - Fn::Sub: arn:aws:s3:::${InputBucket}
+            - Fn::Sub: arn:aws:s3:::${InputBucket}/*
+            Sid: S3Access
+          - Action:
+            - sns:Publish
+            Effect: Allow
+            Resource:
+            - Ref: CodePipelineSNSTopic
+            Sid: SNSAccess
+          Version: 2012-10-17
+        PolicyName: BacklogGitFunctionPolicy
+    Type: AWS::IAM::Role
+  CFnRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action: sts:AssumeRole
+          Effect: Allow
+          Principal:
+            Service: cloudformation.amazonaws.com
+        Version: 2012-10-17
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/AdministratorAccess
+      Path: /
+    Type: AWS::IAM::Role
+  CodeBuildBucket:
+    Properties:
+      VersioningConfiguration:
+        Status: Enabled
+    Type: AWS::S3::Bucket
+  CodeBuildProject:
+    Properties:
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        EnvironmentVariables:
+        - Name: ENV
+          Value:
+            Ref: Environment
+        - Name: AWS_REGION
+          Value:
+            Ref: AWS::Region
+        - Name: S3_BUCKET
+          Value:
+            Ref: CodeBuildBucket
+        Image: aws/codebuild/standard:2.0
+        Type: LINUX_CONTAINER
+      Name:
+        Fn::Sub: ${AppName}
+      ServiceRole:
+        Fn::GetAtt:
+        - CodeBuildRole
+        - Arn
+      Source:
+        Type: CODEPIPELINE
+    Type: AWS::CodeBuild::Project
+  CodeBuildRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action: sts:AssumeRole
+          Effect: Allow
+          Principal:
+            Service: codebuild.amazonaws.com
+        Version: 2012-10-17
+      Path: /
+      Policies:
+      - PolicyDocument:
+          Statement:
+          - Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Effect: Allow
+            Resource:
+            - Fn::Sub: arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/*
+            Sid: CloudWatchLogsAccess
+          - Action:
+            - s3:*
+            Effect: Allow
+            Resource:
+            - arn:aws:s3:::*
+            Sid: S3Access
+          - Action:
+            - cloudformation:*
+            Effect: Allow
+            Resource: '*'
+            Sid: CloudFormationAccess
+          Version: 2012-10-17
+        PolicyName: CodeBuildAccess
+    Type: AWS::IAM::Role
+  CodePipelineSNSTopic:
+    Properties:
+      Subscription:
+      - Endpoint:
+          Ref: Email
+        Protocol: email
+    Type: AWS::SNS::Topic
+  InputBucket:
+    Properties:
+      VersioningConfiguration:
+        Status: Enabled
+    Type: AWS::S3::Bucket
+  Pipeline:
+    Properties:
+      ArtifactStore:
+        Location:
+          Ref: ArtifactStoreBucket
+        Type: S3
+      Name:
+        Fn::Sub: ${AppName}-pipeline
+      RoleArn:
+        Fn::GetAtt:
+        - PipelineRole
+        - Arn
+      Stages:
+      - Actions:
+        - ActionTypeId:
+            Category: Source
+            Owner: AWS
+            Provider: S3
+            Version: 1
+          Configuration:
+            S3Bucket:
+              Ref: InputBucket
+            S3ObjectKey:
+              Ref: InputSourceCodeFilePath
+          Name: CommitAction
+          OutputArtifacts:
+          - Name: SourceOutput
+        Name: Source
+      - Actions:
+        - ActionTypeId:
+            Category: Test
+            Owner: AWS
+            Provider: CodeBuild
+            Version: 1
+          Configuration:
+            ProjectName:
+              Ref: CodeBuildProject
+          InputArtifacts:
+          - Name: SourceOutput
+          Name: TestAction
+          OutputArtifacts:
+          - Name: TestOutput
+        Name: Test
+      - Actions:
+        - ActionTypeId:
+            Category: Deploy
+            Owner: AWS
+            Provider: CloudFormation
+            Version: 1
+          Configuration:
+            ActionMode: CHANGE_SET_REPLACE
+            Capabilities: CAPABILITY_NAMED_IAM
+            ChangeSetName: changeset
+            RoleArn:
+              Fn::GetAtt:
+              - CFnRole
+              - Arn
+            StackName:
+              Fn::Sub: ${AppName}
+            TemplatePath:
+              Fn::Sub: TestOutput::${TemplateFilePath}
+          InputArtifacts:
+          - Name: TestOutput
+          Name: CreateChangeset
+          OutputArtifacts:
+          - Name: BuildOutput
+        Name: Build
+      - Actions:
+        - ActionTypeId:
+            Category: Approval
+            Owner: AWS
+            Provider: Manual
+            Version: 1
+          Configuration:
+            CustomData: Please review
+            NotificationArn:
+              Ref: CodePipelineSNSTopic
+          Name: ApprovalAction
+        Name: Approval
+      - Actions:
+        - ActionTypeId:
+            Category: Deploy
+            Owner: AWS
+            Provider: CloudFormation
+            Version: 1
+          Configuration:
+            ActionMode: CHANGE_SET_EXECUTE
+            ChangeSetName: changeset
+            RoleArn:
+              Fn::GetAtt:
+              - CFnRole
+              - Arn
+            StackName:
+              Fn::Sub: ${AppName}
+          Name: ExecuteChangeset
+        Name: Deploy
+    Type: AWS::CodePipeline::Pipeline
+  PipelineEvent:
+    Properties:
+      Description: EventRule
+      EventPattern:
+        detail:
+          pipeline:
+          - Ref: Pipeline
+          state:
+          - SUCCEEDED
+          - FAILED
+        source:
+        - aws.codepipeline
+      State: ENABLED
+      Targets:
+      - Arn:
+          Ref: CodePipelineSNSTopic
+        Id: CodePipelineSNSTopic
+    Type: AWS::Events::Rule
+  PipelineRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action: sts:AssumeRole
+          Effect: Allow
+          Principal:
+            Service: codepipeline.amazonaws.com
+        Version: 2012-10-17
+      Path: /
+      Policies:
+      - PolicyDocument:
+          Statement:
+          - Action: s3:*
+            Effect: Allow
+            Resource:
+            - Fn::Sub: arn:aws:s3:::${InputBucket}
+            - Fn::Sub: arn:aws:s3:::${InputBucket}/*
+            - Fn::Sub: arn:aws:s3:::${ArtifactStoreBucket}
+            - Fn::Sub: arn:aws:s3:::${ArtifactStoreBucket}/*
+            Sid: S3FullAccess
+          - Action:
+            - cloudformation:*
+            - iam:PassRole
+            Effect: Allow
+            Resource: '*'
+            Sid: FullAccess
+          - Action: sns:Publish
+            Effect: Allow
+            Resource:
+              Ref: CodePipelineSNSTopic
+            Sid: SNSPublishAccess
+          - Action:
+            - codebuild:BatchGetBuilds
+            - codebuild:StartBuild
+            Effect: Allow
+            Resource:
+              Fn::GetAtt:
+              - CodeBuildProject
+              - Arn
+            Sid: CodeBuildAccess
+          Version: 2012-10-17
+        PolicyName: CodePipelineAccess
+    Type: AWS::IAM::Role
+Transform: AWS::Serverless-2016-10-31
