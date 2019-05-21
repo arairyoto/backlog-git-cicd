@@ -44,13 +44,15 @@ parameter-overridesで指定するパラメータは下記の通りです。
 - InputSourceCodeFilePath:ソースコードをS3に置く際のファイル名
 - Email:メールアドレス（承認プロセスのメール通知先）
 3. Webhook設定
+
 BacklogでターゲットとなるリポジトリのWebhookに、2でデプロイした時に作成されたAPI Gatewayのエンドポイントを指定します。
 （WebhookApiEndpointという論理名でCloudFormationに出力しています）
 4. Backlog Gitの操作
+
 Backlog Gitで2で指定したブランチにpush操作が発生すると、CI/CDが駆動されます。
 CI/CDのビルドには、ソースコードに含まれるbuildspec.ymlを利用します。
 そのため、必ずソースコードにbuildspec.ymlファイルを含めるようにしてください。
-### buildspec.ymlファイル記載方法
+### buildspec.ymlファイル記述方法
 ※　phases>install>runtime-versionに必ずランタイムを記載してください。（https://docs.aws.amazon.com/ja_jp/codebuild/latest/userguide/build-spec-ref.html#runtime-versions-buildspec-file）
 ※　template.cfn.ymlを利用する場合は、必ずパッケージングしたCloudFormationのテンプレートを"packaged.yml"として出力してください。
 
