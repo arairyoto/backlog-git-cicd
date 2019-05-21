@@ -354,4 +354,8 @@ Resources:
             RestApiId: !Ref BacklogGitApi
             Path: /
             Method: POST
+OutPuts:
+  WebhookApiEndpoint:
+    Description: "Webhook Api Endpoint"
+    Value: !Sub "https://${BacklogGitApi}.execute-api.${AWS::Region}.amazonaws.com/api/"
 
