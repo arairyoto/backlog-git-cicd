@@ -25,10 +25,11 @@ aws cloudformation package \
     --s3-bucket YOUR_BUCKET
 ```
 でyamlファイル(YOUR_PACKAGE_FILE)を作成します。
+
 2. デプロイ
 ```
 aws cloudformation deploy \
-    --template-file package.yml \
+    --template-file YOUR_PACKAGE_FILE \
     --stack-name YOUR_STACK \
     -- capability CAPABILITY_NAMED_IAM \
     --parameter-overrides ParameterKey1=ParameterValue1 ParameterKey2=ParameterValue2 ...
