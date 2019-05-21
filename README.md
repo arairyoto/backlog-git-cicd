@@ -43,10 +43,12 @@ parameter-overridesで指定するパラメータは下記の通りです。
 - Password:Backlog Gitのパスワード
 - InputSourceCodeFilePath:ソースコードをS3に置く際のファイル名
 - Email:メールアドレス（承認プロセスのメール通知先）
+
 3. Webhook設定
 
 BacklogでターゲットとなるリポジトリのWebhookに、2でデプロイした時に作成されたAPI Gatewayのエンドポイントを指定します。
 （WebhookApiEndpointという論理名でCloudFormationに出力しています）
+
 4. Backlog Gitの操作
 
 Backlog Gitで2で指定したブランチにpush操作が発生すると、CI/CDが駆動されます。
